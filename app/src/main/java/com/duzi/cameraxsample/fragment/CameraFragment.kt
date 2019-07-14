@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.fragment.app.Fragment
 import com.duzi.cameraxsample.R
@@ -30,10 +31,18 @@ class CameraFragment : Fragment() {
 
         viewFinder.post {
             updateCameraUi()
+            bindCameraUseCases()
         }
     }
 
     private fun updateCameraUi() {
         val controls = View.inflate(requireContext(), R.layout.camera_ui_container, container)
+        controls.findViewById<ImageButton>(R.id.camera_capture_button).setOnClickListener {
+
+        }
+    }
+
+    private fun bindCameraUseCases() {
+
     }
 }

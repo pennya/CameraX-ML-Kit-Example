@@ -6,6 +6,7 @@ import android.view.TextureView
 import android.view.ViewGroup
 import androidx.camera.core.Preview
 import androidx.camera.core.PreviewConfig
+import com.google.firebase.ml.vision.common.FirebaseVisionImageMetadata
 import java.lang.ref.WeakReference
 
 class AutoFitPreviewBuilder private constructor(
@@ -57,6 +58,18 @@ class AutoFitPreviewBuilder private constructor(
     }
 
     companion object {
+
+        fun getRotation(rotationCompensation: Int) : Int{
+            return when (rotationCompensation) {
+                0 -> FirebaseVisionImageMetadata.ROTATION_0
+                90 -> FirebaseVisionImageMetadata.ROTATION_90
+                180 -> FirebaseVisionImageMetadata.ROTATION_180
+                270 -> FirebaseVisionImageMetadata.ROTATION_270
+                else -> FirebaseVisionImageMetadata.ROTATION_0
+            }
+        }
+
+
         fun build(config: PreviewConfig, viewFinder: TextureView) =
             AutoFitPreviewBuilder(config, WeakReference(viewFinder)).useCase
     }

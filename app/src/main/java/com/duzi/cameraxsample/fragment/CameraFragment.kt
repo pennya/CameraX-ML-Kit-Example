@@ -13,6 +13,7 @@ import android.util.Log
 import android.util.Rational
 import android.view.*
 import android.widget.ImageButton
+import android.widget.TextView
 import androidx.camera.core.*
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.fragment.app.Fragment
@@ -21,7 +22,11 @@ import com.duzi.cameraxsample.KEY_EVENT_ACTION
 import com.duzi.cameraxsample.KEY_EVENT_EXTRA
 import com.duzi.cameraxsample.R
 import com.duzi.cameraxsample.utils.AutoFitPreviewBuilder
+import com.duzi.cameraxsample.utils.AutoFitPreviewBuilder.Companion.getRotation
 import com.duzi.cameraxsample.utils.simulateClick
+import com.google.firebase.ml.vision.FirebaseVision
+import com.google.firebase.ml.vision.common.FirebaseVisionImage
+import com.google.firebase.ml.vision.common.FirebaseVisionImageMetadata
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 
@@ -30,6 +35,7 @@ class CameraFragment : Fragment() {
     private lateinit var container: ConstraintLayout
     private lateinit var viewFinder: TextureView
     private lateinit var broadcastManager: LocalBroadcastManager
+    private lateinit var label: TextView
 
     private var lensFacing = CameraX.LensFacing.BACK
     private var preview: Preview? = null
@@ -48,6 +54,7 @@ class CameraFragment : Fragment() {
 
         container = view as ConstraintLayout
         viewFinder = container.findViewById(R.id.view_finder)
+        label = container.findViewById(R.id.label)
         broadcastManager = LocalBroadcastManager.getInstance(view.context)
 
         val filter = IntentFilter().apply { addAction(KEY_EVENT_ACTION) }
@@ -105,7 +112,7 @@ class CameraFragment : Fragment() {
         }.build()
 
         imageAnalyzer = ImageAnalysis(analyzerConfig).apply {
-            analyzer = LuminosityAnalyzer()
+            analyzer = LuminosityAnalyzer(label)
         }
 
         // apply camera x
@@ -126,7 +133,8 @@ class CameraFragment : Fragment() {
         }
     }
 
-    private class LuminosityAnalyzer : ImageAnalysis.Analyzer {
+    private class LuminosityAnalyzer constructor(
+        val textView: TextView ) : ImageAnalysis.Analyzer {
         private var lastAnalyzedTimestamp = 0L
 
         /**
@@ -145,20 +153,43 @@ class CameraFragment : Fragment() {
             // Calculate the average luma no more often than every second
             if (currentTimestamp - lastAnalyzedTimestamp >=
                 TimeUnit.SECONDS.toMillis(1)) {
-                // Since format in ImageAnalysis is YUV, image.planes[0]
-                // contains the Y (luminance) plane
-                val buffer = image.planes[0].buffer
-                // Extract image data from callback object
-                val data = buffer.toByteArray()
-                // Convert the data into an array of pixel values
-                val pixels = data.map { it.toInt() and 0xFF }
-                // Compute average luminance for the image
-                val luma = pixels.average()
-                // Log the new luma value
-                Log.d("CameraXApp", "Average luminosity: $luma")
-                // Update timestamp of last analyzed frame
                 lastAnalyzedTimestamp = currentTimestamp
+
+                val y = image.planes[0]
+                val u = image.planes[1]
+                val v = image.planes[2]
+
+                val Yb = y.buffer.remaining()
+                val Ub = u.buffer.remaining()
+                val Vb = v.buffer.remaining()
+
+                val data = ByteArray(Yb + Ub + Vb)
+
+                y.buffer.get(data, 0, Yb)
+                u.buffer.get(data, Yb, Ub)
+                v.buffer.get(data, Yb + Ub, Vb)
+
+                val metadata = FirebaseVisionImageMetadata.Builder()
+                    .setFormat(FirebaseVisionImageMetadata.IMAGE_FORMAT_YV12)
+                    .setHeight(image.height)
+                    .setWidth(image.width)
+                    .setRotation(getRotation(rotationDegrees))
+                    .build()
+
+                val labelImage = FirebaseVisionImage.fromByteArray(data, metadata)
+
+                val labeler = FirebaseVision.getInstance().getOnDeviceImageLabeler()
+                labeler.processImage(labelImage)
+                    .addOnSuccessListener { labels ->
+                        textView.run {
+                            if( labels.size >= 1 ) {
+                                text = "${labels[0].text} ${labels[0].confidence}"
+                            }
+                        }
+                    }
             }
+
+
         }
     }
 

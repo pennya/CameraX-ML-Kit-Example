@@ -28,7 +28,7 @@
 
         <meta-data
             android:name="com.google.firebase.ml.vision.DEPENDENCIES"
-            android:value="label" />
+            android:value="label,ocr,model2,model3" />
     </application>
 
 </manifest>

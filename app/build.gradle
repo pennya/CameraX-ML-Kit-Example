@@ -54,6 +54,8 @@ dependencies {
     implementation 'com.google.firebase:firebase-core:17.0.0'
     implementation 'com.google.firebase:firebase-ml-vision:22.0.0'
     implementation 'com.google.firebase:firebase-ml-vision-image-label-model:18.0.0'
+    implementation 'com.google.firebase:firebase-ml-vision-face-model:18.0.0'
+    implementation 'com.google.firebase:firebase-ml-model-interpreter:20.0.1'
 }
 
 apply plugin: 'com.google.gms.google-services'

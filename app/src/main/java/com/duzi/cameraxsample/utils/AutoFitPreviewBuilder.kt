@@ -13,6 +13,7 @@ class AutoFitPreviewBuilder private constructor(
     config: PreviewConfig, viewFinderRef: WeakReference<TextureView>) {
 
     val useCase: Preview
+    var rotationDegrees = 0
 
     init {
         val viewFinder = viewFinderRef.get() ?:
@@ -23,6 +24,8 @@ class AutoFitPreviewBuilder private constructor(
         useCase.onPreviewOutputUpdateListener = Preview.OnPreviewOutputUpdateListener {
             val viewFinder =
                 viewFinderRef.get() ?: return@OnPreviewOutputUpdateListener
+
+            rotationDegrees = it.rotationDegrees
 
             val parent = viewFinder.parent as ViewGroup
             parent.removeView(viewFinder)
@@ -69,6 +72,8 @@ class AutoFitPreviewBuilder private constructor(
             }
         }
 
+        fun newInstance(config: PreviewConfig, viewFinder: TextureView) =
+            AutoFitPreviewBuilder(config, WeakReference(viewFinder))
 
         fun build(config: PreviewConfig, viewFinder: TextureView) =
             AutoFitPreviewBuilder(config, WeakReference(viewFinder)).useCase

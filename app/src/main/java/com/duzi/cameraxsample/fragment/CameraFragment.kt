@@ -9,26 +9,25 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.DisplayMetrics
-import android.util.Log
 import android.util.Rational
 import android.view.*
+import android.view.View.GONE
+import android.view.View.VISIBLE
+import android.widget.Button
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.camera.core.*
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Observer
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.duzi.cameraxsample.KEY_EVENT_ACTION
-import com.duzi.cameraxsample.KEY_EVENT_EXTRA
+import com.duzi.cameraxsample.*
 import com.duzi.cameraxsample.R
+import com.duzi.cameraxsample.model.TextAnalyzerResult
 import com.duzi.cameraxsample.utils.AutoFitPreviewBuilder
-import com.duzi.cameraxsample.utils.AutoFitPreviewBuilder.Companion.getRotation
 import com.duzi.cameraxsample.utils.simulateClick
-import com.google.firebase.ml.vision.FirebaseVision
-import com.google.firebase.ml.vision.common.FirebaseVisionImage
-import com.google.firebase.ml.vision.common.FirebaseVisionImageMetadata
-import java.nio.ByteBuffer
-import java.util.concurrent.TimeUnit
+import com.duzi.cameraxsample.view.GraphicOverlay
+import com.duzi.cameraxsample.view.TextGraphic
 
 class CameraFragment : Fragment() {
 
@@ -36,11 +35,20 @@ class CameraFragment : Fragment() {
     private lateinit var viewFinder: TextureView
     private lateinit var broadcastManager: LocalBroadcastManager
     private lateinit var label: TextView
+    private lateinit var graphicOverlay: GraphicOverlay
 
+    private val objectDetectAnalyzer = ObjectDetectAnalyzer()
+    private val textDetectAnalyzer = TextDetectAnalyzer()
     private var lensFacing = CameraX.LensFacing.BACK
+    private var previewBuilder: AutoFitPreviewBuilder? = null
     private var preview: Preview? = null
     private var imageCapture: ImageCapture? = null
     private var imageAnalyzer: ImageAnalysis? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        observe()
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -55,6 +63,7 @@ class CameraFragment : Fragment() {
         container = view as ConstraintLayout
         viewFinder = container.findViewById(R.id.view_finder)
         label = container.findViewById(R.id.label)
+        graphicOverlay = container.findViewById(R.id.graphic_overlay)
         broadcastManager = LocalBroadcastManager.getInstance(view.context)
 
         val filter = IntentFilter().apply { addAction(KEY_EVENT_ACTION) }
@@ -72,10 +81,37 @@ class CameraFragment : Fragment() {
         broadcastManager.unregisterReceiver(volumeDownReceiver)
     }
 
+    private fun observe() {
+        objectDetectAnalyzer.objectDetectTextLiveData
+            .observe(this@CameraFragment, Observer {
+                label.text = it
+            })
+
+        textDetectAnalyzer.visionTextLiveData
+            .observe(this@CameraFragment, Observer {
+                drawVisionTexts(it)
+            })
+    }
+
     private fun updateCameraUi() {
         val controls = View.inflate(requireContext(), R.layout.camera_ui_container, container)
         controls.findViewById<ImageButton>(R.id.camera_capture_button).setOnClickListener {
+            // TODO   save file to directory
+        }
 
+        controls.findViewById<Button>(R.id.object_detect_button).setOnClickListener {
+            imageAnalyzer?.let { it.analyzer = objectDetectAnalyzer }
+
+            label.visibility = VISIBLE
+            graphicOverlay.visibility = GONE
+        }
+
+        controls.findViewById<Button>(R.id.text_detect_button).setOnClickListener {
+            imageAnalyzer?.let { it.analyzer = textDetectAnalyzer }
+
+            graphicOverlay.clear()
+            label.visibility = GONE
+            graphicOverlay.visibility = VISIBLE
         }
     }
 
@@ -90,7 +126,8 @@ class CameraFragment : Fragment() {
             setTargetRotation(viewFinder.display.rotation)
         }.build()
 
-        preview = AutoFitPreviewBuilder.build(viewFinderConfig, viewFinder)
+        previewBuilder = AutoFitPreviewBuilder.newInstance(viewFinderConfig, viewFinder)
+        preview = previewBuilder?.useCase
 
         // image capture
         val imageCaptureConfig = ImageCaptureConfig.Builder().apply {
@@ -112,12 +149,36 @@ class CameraFragment : Fragment() {
         }.build()
 
         imageAnalyzer = ImageAnalysis(analyzerConfig).apply {
-            analyzer = LuminosityAnalyzer(label)
+            // Default
+            analyzer = objectDetectAnalyzer
         }
 
         // apply camera x
         CameraX.bindToLifecycle(
             viewLifecycleOwner, preview, imageCapture, imageAnalyzer)
+    }
+
+    private fun drawVisionTexts(result: TextAnalyzerResult) {
+        val blocks = result.visionText.textBlocks
+        if (blocks.isEmpty()) {
+            return
+        }
+
+        graphicOverlay.clear()
+        for (i in blocks.indices) {
+            val lines = blocks[i].lines
+            for (j in lines.indices) {
+                val elements = lines[j].elements
+                for (k in elements.indices) {
+                    val textGraphic = TextGraphic(graphicOverlay, elements[k])
+                    graphicOverlay.add(textGraphic)
+                }
+            }
+        }
+
+        val imageDegree = previewBuilder?.rotationDegrees ?: 0
+        val matrix = TextDetectAnalyzer.calcFitMatrix(result, viewFinder, -imageDegree)
+        graphicOverlay.matrix = matrix
     }
 
     private val volumeDownReceiver = object: BroadcastReceiver() {
@@ -130,66 +191,6 @@ class CameraFragment : Fragment() {
                     shutter.simulateClick()
                 }
             }
-        }
-    }
-
-    private class LuminosityAnalyzer constructor(
-        val textView: TextView ) : ImageAnalysis.Analyzer {
-        private var lastAnalyzedTimestamp = 0L
-
-        /**
-         * Helper extension function used to extract a byte array from an
-         * image plane buffer
-         */
-        private fun ByteBuffer.toByteArray(): ByteArray {
-            rewind()    // Rewind the buffer to zero
-            val data = ByteArray(remaining())
-            get(data)   // Copy the buffer into a byte array
-            return data // Return the byte array
-        }
-
-        override fun analyze(image: ImageProxy, rotationDegrees: Int) {
-            val currentTimestamp = System.currentTimeMillis()
-            // Calculate the average luma no more often than every second
-            if (currentTimestamp - lastAnalyzedTimestamp >=
-                TimeUnit.SECONDS.toMillis(1)) {
-                lastAnalyzedTimestamp = currentTimestamp
-
-                val y = image.planes[0]
-                val u = image.planes[1]
-                val v = image.planes[2]
-
-                val Yb = y.buffer.remaining()
-                val Ub = u.buffer.remaining()
-                val Vb = v.buffer.remaining()
-
-                val data = ByteArray(Yb + Ub + Vb)
-
-                y.buffer.get(data, 0, Yb)
-                u.buffer.get(data, Yb, Ub)
-                v.buffer.get(data, Yb + Ub, Vb)
-
-                val metadata = FirebaseVisionImageMetadata.Builder()
-                    .setFormat(FirebaseVisionImageMetadata.IMAGE_FORMAT_YV12)
-                    .setHeight(image.height)
-                    .setWidth(image.width)
-                    .setRotation(getRotation(rotationDegrees))
-                    .build()
-
-                val labelImage = FirebaseVisionImage.fromByteArray(data, metadata)
-
-                val labeler = FirebaseVision.getInstance().getOnDeviceImageLabeler()
-                labeler.processImage(labelImage)
-                    .addOnSuccessListener { labels ->
-                        textView.run {
-                            if( labels.size >= 1 ) {
-                                text = "${labels[0].text} ${labels[0].confidence}"
-                            }
-                        }
-                    }
-            }
-
-
         }
     }
 

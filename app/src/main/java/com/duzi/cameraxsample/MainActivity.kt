@@ -1,6 +1,7 @@
 package com.duzi.cameraxsample
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
@@ -11,6 +12,7 @@ import com.duzi.cameraxsample.fragment.CameraFragment
 import com.duzi.cameraxsample.utils.FLAGS_FULLSCREEN
 import com.gun0912.tedpermission.PermissionListener
 import com.gun0912.tedpermission.TedPermission
+import java.io.File
 
 const val KEY_EVENT_ACTION = "key_event_action"
 const val KEY_EVENT_EXTRA = "key_event_extra"
@@ -61,5 +63,15 @@ class MainActivity : AppCompatActivity() {
             else -> super.onKeyDown(keyCode, event)
         }
 
+    }
+
+    companion object {
+        fun getOutputDirectory(context: Context): File {
+            val appContext = context.applicationContext
+            val mediaDir = context.externalMediaDirs.firstOrNull()?.let {
+                File(it, appContext.resources.getString(R.string.app_name)).apply { mkdirs() } }
+            return if (mediaDir != null && mediaDir.exists())
+                mediaDir else appContext.filesDir
+        }
     }
 }

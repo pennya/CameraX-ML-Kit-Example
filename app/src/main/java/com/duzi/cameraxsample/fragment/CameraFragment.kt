@@ -5,6 +5,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.hardware.Camera
+import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -13,6 +19,7 @@ import android.util.Rational
 import android.view.*
 import android.view.View.GONE
 import android.view.View.VISIBLE
+import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.TextView
@@ -24,10 +31,15 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.duzi.cameraxsample.*
 import com.duzi.cameraxsample.R
 import com.duzi.cameraxsample.model.TextAnalyzerResult
+import com.duzi.cameraxsample.utils.ANIMATION_FAST_MILLIS
+import com.duzi.cameraxsample.utils.ANIMATION_SLOW_MILLIS
 import com.duzi.cameraxsample.utils.AutoFitPreviewBuilder
 import com.duzi.cameraxsample.utils.simulateClick
 import com.duzi.cameraxsample.view.GraphicOverlay
 import com.duzi.cameraxsample.view.TextGraphic
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
 class CameraFragment : Fragment() {
 
@@ -36,6 +48,7 @@ class CameraFragment : Fragment() {
     private lateinit var broadcastManager: LocalBroadcastManager
     private lateinit var label: TextView
     private lateinit var graphicOverlay: GraphicOverlay
+    private lateinit var outputDirectory: File
 
     private val objectDetectAnalyzer = ObjectDetectAnalyzer()
     private val textDetectAnalyzer = TextDetectAnalyzer()
@@ -65,6 +78,7 @@ class CameraFragment : Fragment() {
         label = container.findViewById(R.id.label)
         graphicOverlay = container.findViewById(R.id.graphic_overlay)
         broadcastManager = LocalBroadcastManager.getInstance(view.context)
+        outputDirectory = MainActivity.getOutputDirectory(view.context)
 
         val filter = IntentFilter().apply { addAction(KEY_EVENT_ACTION) }
         broadcastManager.registerReceiver(volumeDownReceiver, filter)
@@ -96,7 +110,45 @@ class CameraFragment : Fragment() {
     private fun updateCameraUi() {
         val controls = View.inflate(requireContext(), R.layout.camera_ui_container, container)
         controls.findViewById<ImageButton>(R.id.camera_capture_button).setOnClickListener {
-            // TODO   save file to directory
+            imageCapture?.let { imageCapture ->
+                val photoFile = createFile(outputDirectory, FILENAME, PHOTO_EXTENSION)
+                val metadata = ImageCapture.Metadata().apply {
+                    isReversedHorizontal = lensFacing == CameraX.LensFacing.FRONT
+                }
+
+                imageCapture.takePicture(photoFile, object: ImageCapture.OnImageSavedListener {
+                    override fun onImageSaved(file: File) {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                            requireActivity().sendBroadcast(
+                                Intent(Camera.ACTION_NEW_PICTURE, Uri.fromFile(photoFile)))
+                        }
+
+                        val mimeType = MimeTypeMap.getSingleton()
+                            .getMimeTypeFromExtension(photoFile.extension)
+                        MediaScannerConnection.scanFile(
+                            context, arrayOf(photoFile.absolutePath), arrayOf(mimeType), null)
+                    }
+
+                    override fun onError(
+                        useCaseError: ImageCapture.UseCaseError,
+                        message: String,
+                        cause: Throwable?
+                    ) {
+                        cause?.printStackTrace()
+                    }
+
+                }, metadata)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    container.postDelayed({
+                        container.foreground = ColorDrawable(Color.WHITE)
+                        container.postDelayed(
+                            { container.foreground = null }, ANIMATION_FAST_MILLIS
+                        )
+                    }, ANIMATION_SLOW_MILLIS)
+                }
+
+            }
         }
 
         controls.findViewById<Button>(R.id.object_detect_button).setOnClickListener {
@@ -196,5 +248,11 @@ class CameraFragment : Fragment() {
 
     companion object {
         private const val TAG = "CameraX-XL-Kit"
+        private const val FILENAME = "yyyy-MM-dd-HH-mm-ss-SSS"
+        private const val PHOTO_EXTENSION = ".jpg"
+
+        private fun createFile(baseFolder: File, format: String, extension: String) =
+            File(baseFolder, SimpleDateFormat(format)
+                .format(System.currentTimeMillis()) + extension)
     }
 }

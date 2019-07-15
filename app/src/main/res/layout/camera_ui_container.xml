@@ -14,7 +14,7 @@
         app:layout_constraintTop_toTopOf="@+id/camera_capture_button"
         app:layout_constraintBottom_toBottomOf="@+id/camera_capture_button"
         android:layout_marginLeft="36dp"
-        android:text="물건 분석"/>
+        android:text="물체 인식"/>
 
     <ImageButton
         android:id="@+id/camera_capture_button"
@@ -35,6 +35,6 @@
         app:layout_constraintTop_toTopOf="@+id/camera_capture_button"
         app:layout_constraintBottom_toBottomOf="@+id/camera_capture_button"
         android:layout_marginRight="36dp"
-        android:text="글자 분석"/>
+        android:text="텍스트 인식"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
